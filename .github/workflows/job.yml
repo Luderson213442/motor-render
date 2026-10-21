@@ -1,0 +1,64 @@
+name: job
+run-name: ${{ inputs.job }}
+# Tarefa efêmera: baixa a entrada do armazenamento privado, processa e devolve a saída.
+# Sem release, artifact ou cache; o log não mostra arquivos nem links, e a execução é apagada ao terminar.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: id da tarefa
+        required: true
+permissions: {}
+jobs:
+  job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JOB: ${{ inputs.job }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_KEY: ${{ secrets.S3_KEY }}
+      S3_SECRET: ${{ secrets.S3_SECRET }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preparar
+        run: |
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg aria2 jq > /dev/null 2>&1
+          pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1
+          mkdir -p fonts
+          for f in Montserrat-ExtraBold.ttf Montserrat-Bold.ttf; do
+            curl -sfL "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/$f" -o fonts/$f
+          done
+          echo ok
+      - name: Entrada
+        env:
+          FONTE: ${{ secrets.FONTE }}
+        run: |
+          python motor/job.py baixar
+          aria2c -q -x 8 -s 8 -o ep.mp4 "$FONTE/$(cat arquivo.txt)" > /dev/null 2>&1
+          N=$(ffprobe -v error -select_streams a -show_entries stream_tags=language -of csv=p=0 ep.mp4 | grep -n -i -E '^(por|pt|pob|pt-br)' | head -1 | cut -d: -f1)
+          ffmpeg -v error -y -i ep.mp4 -map 0:v:0 -map 0:a:$(( ${N:-1} - 1 )) -c copy ep-pt.mp4 && mv ep-pt.mp4 ep.mp4
+          rm arquivo.txt; echo ok
+      - name: Processar
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          set +e
+          if [ "$TIPO" = render ]; then
+            python scripts/render_primeira.py trabalho/j > log.txt 2>&1
+          else
+            ffmpeg -v error -y -i ep.mp4 -vn -ac 1 -ar 16000 -b:a 64k audio-pt.mp3 > log.txt 2>&1
+            U=$(curl -sf -H "authorization: $ASSEMBLYAI_API_KEY" --data-binary @audio-pt.mp3 https://api.assemblyai.com/v2/upload | jq -r .upload_url)
+            echo "::add-mask::$U"
+            VIDEO_URL="$U" python scripts/analisar.py >> log.txt 2>&1 && \
+              python scripts/narrado_quadros.py ep.mp4 saida/cenas.json saida/quadros saida/folhas >> log.txt 2>&1
+          fi
+          R=$?; echo "saida: $R"; exit $R
+      - name: Saída
+        if: always()
+        run: python motor/job.py enviar
+      - name: Limpar
+        if: always()
+        run: rm -rf trabalho saida ep.mp4 audio-pt.mp3 audio.wav out.tar.gz log.txt; echo ok
