@@ -34,7 +34,7 @@ FONTE_B = 'fonts/Montserrat-Bold.ttf'
 OUT = 'saida'
 FPS = 30
 ALVO_PPS = 3.4               # palavras por segundo depois do atempo
-ATEMPO_MAX = 1.22
+ATEMPO_MAX = 1.12  # era 1.22; acelerar mais que isso deixa a voz clonada artificial (25/10/2026)
 RESPIRO = 0.07               # entre uma fala e outra
 CAUDA = 0.5                  # som do episódio depois da última fala
 INS_RESPIRO = 0.12           # silêncio entre a narradora e uma fala original (e na volta)
@@ -91,7 +91,8 @@ for i, f in enumerate(itens):
     if i + 1 < len(itens) and itens[i + 1].get('tipo') == 'original':
         fades += f',areverse,afade=t=in:d={FADE_NARR_OUT},areverse'
     if i and itens[i - 1].get('tipo') == 'original':
-        fades += f',afade=t=in:d={FADE_NARR_IN}'
+        # respiro antes de voltar: a rampa de saída do episódio engolia a 1ª palavra ("E ele recusou" virava "Ele recusou")
+        fades += f',afade=t=in:d={FADE_NARR_IN},adelay=180:all=1'
     run('-i', bruto, '-af',
         f'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,'
         f'areverse,atempo={tempo:.3f}' + fades, '-ar', '48000', '-ac', '1', '-c:a', 'pcm_s16le', arq)
