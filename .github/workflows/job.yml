@@ -26,8 +26,12 @@ jobs:
       - name: Preparar
         timeout-minutes: 8
         run: |
-          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg aria2 jq > /dev/null 2>&1
-          pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1
+          falta=""; for p in ffmpeg aria2c jq; do command -v $p > /dev/null || falta="$falta $p"; done
+          falta=$(echo $falta | sed s/aria2c/aria2/)
+          if [ -n "$falta" ]; then
+            for t in 1 2 3; do sudo timeout 150 apt-get update -qq > /dev/null 2>&1; sudo timeout 150 apt-get install -y -qq $falta > /dev/null 2>&1 && break; done
+          fi
+          for t in 1 2 3; do timeout 150 pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1 && break; done
           mkdir -p fonts
           for f in Montserrat-ExtraBold.ttf Montserrat-Bold.ttf; do
             curl -sfL "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/$f" -o fonts/$f
