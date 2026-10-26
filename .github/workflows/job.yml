@@ -27,7 +27,7 @@ jobs:
         timeout-minutes: 8
         run: |
           falta=""; for p in ffmpeg ffprobe aria2c jq; do command -v $p > /dev/null || falta="$falta $p"; done
-          falta=$(echo $falta | sed s/aria2c/aria2/)
+          falta=$(echo $falta | sed -e s/aria2c/aria2/ -e s/ffprobe/ffmpeg/)
           if [ -n "$falta" ]; then
             for t in 1 2 3; do sudo timeout 150 apt-get update -qq > /dev/null 2>&1; sudo timeout 150 apt-get install -y -qq $falta > /dev/null 2>&1 && break; done
           fi
