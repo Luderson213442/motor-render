@@ -24,6 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Preparar
+        timeout-minutes: 8
         run: |
           sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg aria2 jq > /dev/null 2>&1
           pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1
