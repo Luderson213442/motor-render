@@ -144,7 +144,7 @@ for i, (f, v) in enumerate(zip(itens, vozes)):
             avisos.append(f'{f["id"]} clipe {k + 1}: usa {n:.1f}s de um trecho de {b - a:.1f}s (segue o episódio)')
         segs.append({'fala': f['id'], 'src': a, 'dur': n, 'ini': round(s_ini, 3), 'fim': round(s_ini + n, 3)})
 
-FILTRO_V = (f'scale=-2:{FAIXA_H}:flags=lanczos,crop={W}:{FAIXA_H},setsar=1,fps={FPS},'
+FILTRO_V = (f'scale={W}:{FAIXA_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{FAIXA_H},setsar=1,fps={FPS},'
             'eq=contrast=1.04:saturation=1.06')
 
 
