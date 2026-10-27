@@ -1,0 +1,48 @@
+name: voz
+run-name: ${{ inputs.job }}
+# Tarefa efêmera de voz na CPU: baixa a entrada do armazenamento privado, gera e devolve a saída.
+# Sem release nem artifact; o log não mostra arquivos nem links, e a execução é apagada ao terminar.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: id da tarefa
+        required: true
+permissions: {}
+jobs:
+  job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      JOB: ${{ inputs.job }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_KEY: ${{ secrets.S3_KEY }}
+      S3_SECRET: ${{ secrets.S3_SECRET }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-voxcpm2-v1
+      - name: Preparar
+        run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu > /dev/null 2>&1
+          pip install -q boto3 soundfile "voxcpm>=2.0.3" > /dev/null 2>&1
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('openbmb/VoxCPM2')" > /dev/null 2>&1
+          echo ok
+      - name: Entrada
+        run: python motor/job.py baixar > /dev/null && rm -f arquivo.txt && echo ok
+      - name: Processar
+        run: |
+          set +e
+          python scripts/voz_cpu.py > log.txt 2>&1
+          R=$?; echo "saida: $R"; exit $R
+      - name: Saída
+        if: always()
+        run: python motor/job.py enviar
+      - name: Limpar
+        if: always()
+        run: rm -rf trabalho saida out.tar.gz log.txt; echo ok
