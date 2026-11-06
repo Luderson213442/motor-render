@@ -42,8 +42,8 @@ jobs:
           mkdir -p saida
           J=trabalho/job.json
           FPS=$(jq -r '.fps // 30' $J); W=$(jq -r '.largura // 1080' $J); H=$(jq -r '.altura // 1920' $J)
-          SEL=$(jq -r '.seletor // "#palco"' $J); P=$(jq -r '.partes // 4' $J)
-          node motor/html_quadros.mjs trabalho/pagina saida/video.mp4 $FPS $W $H "$SEL" $P > log.txt 2>&1
+          SEL=$(jq -r '.seletor // "#palco"' $J); P=$(jq -r '.partes // 4' $J); TR=$(jq -r '.trecho // "0/1"' $J)
+          node motor/html_quadros.mjs trabalho/pagina saida/video.mp4 $FPS $W $H "$SEL" $P $TR > log.txt 2>&1
           R=$?; echo "saida: $R"; exit $R
       - name: Saída
         if: always()
