@@ -1,0 +1,53 @@
+name: html
+run-name: ${{ inputs.job }}
+# Tarefa efêmera: baixa do armazenamento privado uma página HTML animada por tempo, grava em vídeo e devolve.
+# Sem release, artifact ou cache; o log não mostra arquivos nem links, e a execução é apagada ao terminar.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: id da tarefa
+        required: true
+permissions: {}
+jobs:
+  job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JOB: ${{ inputs.job }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_KEY: ${{ secrets.S3_KEY }}
+      S3_SECRET: ${{ secrets.S3_SECRET }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Preparar
+        run: |
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg jq fonts-noto-color-emoji > /dev/null 2>&1
+          pip install -q boto3 > /dev/null 2>&1
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y > /dev/null && npm i -s playwright@1.48.2 > /dev/null 2>&1
+          npx playwright install --with-deps chromium > /dev/null 2>&1
+          ln -s /tmp/pw/node_modules "$GITHUB_WORKSPACE/node_modules"
+          echo ok
+      - name: Entrada
+        run: python motor/job.py baixar > /dev/null && rm -f arquivo.txt && echo ok
+      - name: Processar
+        run: |
+          set +e
+          mkdir -p saida
+          J=trabalho/job.json
+          FPS=$(jq -r '.fps // 30' $J); W=$(jq -r '.largura // 1080' $J); H=$(jq -r '.altura // 1920' $J)
+          SEL=$(jq -r '.seletor // "#palco"' $J); P=$(jq -r '.partes // 4' $J)
+          node motor/html_quadros.mjs trabalho/pagina saida/video.mp4 $FPS $W $H "$SEL" $P > log.txt 2>&1
+          R=$?; echo "saida: $R"; exit $R
+      - name: Saída
+        if: always()
+        run: python motor/job.py enviar
+      - name: Limpar
+        if: always()
+        run: rm -rf trabalho saida out.tar.gz log.txt; echo ok
