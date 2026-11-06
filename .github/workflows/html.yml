@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   job:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 40
     env:
       JOB: ${{ inputs.job }}
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
@@ -27,6 +27,7 @@ jobs:
         with:
           node-version: 22
       - name: Preparar
+        timeout-minutes: 10
         run: |
           sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg jq fonts-noto-color-emoji > /dev/null 2>&1
           pip install -q boto3 > /dev/null 2>&1
@@ -37,6 +38,7 @@ jobs:
       - name: Entrada
         run: python motor/job.py baixar > /dev/null && rm -f arquivo.txt && echo ok
       - name: Processar
+        timeout-minutes: 25
         run: |
           set +e
           mkdir -p saida
