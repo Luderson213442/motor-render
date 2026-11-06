@@ -1,7 +1,9 @@
 // Renderiza em vídeo uma página HTML animada por tempo.
 // A página expõe window.__duracao (s) e window.__irPara(s), que desenha exatamente aquele instante.
 //
-//   node motor/html_quadros.mjs <pasta> <saida.mp4> [fps=30] [largura=1080] [altura=1920] [seletor=#palco] [partes=4]
+//   node motor/html_quadros.mjs <pasta> <saida.mp4> [fps=30] [largura=1080] [altura=1920] [seletor=#palco] [partes=4] [trecho=0/1]
+//
+// trecho k/n: grava só a k-ésima de n fatias do vídeo, sem áudio (para dividir entre várias máquinas e juntar depois).
 //
 // Serve <pasta> num http local, abre <pasta>/index.html no Chromium headless, desenha cada quadro com
 // __irPara(i/fps), espera o próximo quadro, as imagens, as fontes e a rede ficarem quietas, tira o print
@@ -12,7 +14,8 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
-const [, , PASTA, SAIDA, FPS_ = '30', L_ = '1080', A_ = '1920', SEL = '#palco', PARTES_ = '4'] = process.argv;
+const [, , PASTA, SAIDA, FPS_ = '30', L_ = '1080', A_ = '1920', SEL = '#palco', PARTES_ = '4', TRECHO = '0/1'] = process.argv;
+const [TK, TN] = TRECHO.split('/').map(Number);
 const FPS = +FPS_, L = +L_, A = +A_, PARTES = Math.max(1, +PARTES_);
 const RAIZ = resolve(PASTA);
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
@@ -83,16 +86,17 @@ function codificador(arq) {
 const p0 = await abrir();
 const DUR = p0.dur;
 const N = Math.round(DUR * FPS);
-log(`duração ${DUR}s, ${N} quadros a ${FPS} fps, recorte ${JSON.stringify(p0.clip)}, ${PARTES} partes`);
+const I0 = Math.floor(N * TK / TN), I1 = Math.floor(N * (TK + 1) / TN);
+log(`duração ${DUR}s, ${N} quadros (trecho ${I0}-${I1 - 1}) a ${FPS} fps, recorte ${JSON.stringify(p0.clip)}, ${PARTES} partes`);
 
 // aquece: passa por todo o vídeo de 1 em 1 s para o navegador já ter baixado e decodificado tudo
-for (let t = 0; t < DUR; t += 1) await p0.desenhar(t);
+for (let t = I0 / FPS; t < I1 / FPS; t += 1) await p0.desenhar(t);
 
-const tam = Math.ceil(N / PARTES);
+const tam = Math.ceil((I1 - I0) / PARTES);
 const segs = [];
 const trabalhos = [];
 for (let k = 0; k < PARTES; k++) {
-  const a = k * tam, b = Math.min(N, a + tam);
+  const a = I0 + k * tam, b = Math.min(I1, a + tam);
   if (a >= b) break;
   const arq = `parte-${k}.mp4`;
   segs.push(arq);
@@ -117,8 +121,9 @@ srv.close();
 writeFileSync('partes.txt', segs.map(s => `file '${resolve(s)}'`).join('\n') + '\n');
 const AUDIO = join(RAIZ, 'audio.m4a');
 const args = ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'partes.txt'];
-if (existsSync(AUDIO)) args.push('-i', AUDIO, '-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '192k', '-af', 'apad', '-t', String(N / FPS));
+if (TN === 1 && existsSync(AUDIO)) args.push('-i', AUDIO, '-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '192k', '-af', 'apad', '-t', String(N / FPS));
+console.log(`trecho ${TK}/${TN}: quadros ${I0} a ${I1 - 1}`);
 args.push('-c:v', 'copy', '-movflags', '+faststart', SAIDA);
 await new Promise((ok, erro) => spawn('ffmpeg', args, { stdio: 'inherit' }).on('close', c => c === 0 ? ok() : erro(new Error('ffmpeg final ' + c))));
 for (const s of [...segs, 'partes.txt']) rmSync(s, { force: true });
-log(`pronto: ${N} quadros, ${(statSync(SAIDA).size / 1e6).toFixed(1)} MB`);
+log(`pronto: ${I1 - I0} quadros, ${(statSync(SAIDA).size / 1e6).toFixed(1)} MB`);
