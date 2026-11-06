@@ -31,7 +31,7 @@ const srv = createServer((q, r) => {
   createReadStream(p).pipe(r);
 });
 await new Promise(ok => srv.listen(0, '127.0.0.1', ok));
-const URL_ = `http://127.0.0.1:${srv.address().port}/index.html`;
+const URL_ = `http://127.0.0.1:${srv.address().port}/index.html?t=0`;  // ?t= tira a interface de reprodução, se a página tiver
 
 const nav = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--disable-gpu-vsync', '--font-render-hinting=none'] });
 
@@ -45,7 +45,7 @@ async function abrir() {
   pg.on('pageerror', e => log('erro na página:', e.message));
   await pg.goto(URL_, { waitUntil: 'networkidle', timeout: 120000 });
   await pg.waitForFunction(() => typeof window.__irPara === 'function' && +window.__duracao > 0, null, { timeout: 120000 });
-  await pg.evaluate(() => document.fonts.ready);
+  await pg.evaluate(async () => { await document.fonts.ready; if (window.__pronto) await window.__pronto; });
   const quieta = async () => {
     const fim = Date.now() + 15000;
     while (voando > 0 && Date.now() < fim) await pg.waitForTimeout(20);
