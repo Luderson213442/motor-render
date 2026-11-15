@@ -16,11 +16,11 @@ import subprocess
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 PADRAO = {
-    'largura': 1080, 'centro_y': 1335, 'fonte': 'fonts/Montserrat-ExtraBold.ttf', 'tam': 82,
+    'largura': 1080, 'centro_y': 1335, 'fonte': 'fonts/Montserrat-ExtraBold.ttf', 'tam': 62,
     'max_palavras': 4, 'max_linha': 640, 'entrelinha': 1.2,
-    'caixa': (12, 12, 18, 190), 'caixa_borda': (255, 255, 255, 18), 'caixa_raio': 30, 'caixa_pad': (40, 30),
+    'caixa': (12, 12, 18, 190), 'caixa_borda': (255, 255, 255, 18), 'caixa_raio': 24, 'caixa_pad': (30, 22),
     'futura': (128, 128, 140), 'dita': (255, 255, 255), 'atual_txt': (255, 255, 255),
-    'pilula': (225, 48, 108), 'pilula_raio': 16, 'pilula_pad': (14, 4), 'brilho': 0.55,
+    'pilula': (225, 48, 108), 'pilula_raio': 12, 'pilula_pad': (11, 3), 'brilho': 0.55,
     'pop_ini': 0.8, 'pop_tau': 0.07, 'pop_periodo': 0.16, 'transicao': 0.1, 'desfoque': 7,
 }
 
@@ -74,7 +74,7 @@ def gerar(palavras, saida, total, fps, cfg=None):
     fonte = ImageFont.truetype(cfg['fonte'], cfg['tam'])
     esp = fonte.getlength(' ')
     for p in palavras:
-        p['txt'] = re.sub(r'[.,!?;:…"“”]', '', p['w']).strip() or p['w']
+        p['txt'] = re.sub(r'["“”]', '', p['w']).strip() or p['w']  # mantém a pontuação do roteiro (14/11/2026)
     pags = paginas(palavras, cfg, fonte)
 
     # tempos e geometria de cada página
