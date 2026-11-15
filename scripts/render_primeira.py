@@ -246,29 +246,95 @@ def grupo_de(t):
     return next((k for k, v in enumerate(vozes) if t < v['t'] + v['dur'] + 0.1), len(vozes) - 1)
 
 
-palavras = palavras_aai(f'{OUT}/narr.mp3')
-for p in palavras:  # grupo = item do roteiro (a legenda não mistura narradora e fala original na mesma página)
-    p['grupo'] = grupo_de(p['a'])
-# A AssemblyAI às vezes perde o fim da trilha (20/10/2026: parou no meio da última frase, duas vezes, com o áudio inteiro).
-# Item com menos da metade das palavras do texto é transcrito sozinho e encaixado no lugar.
-for k, (f, v) in enumerate(zip(itens, vozes)):
-    tem = sum(1 for p in palavras if p['grupo'] == k)
-    if tem >= 0.5 * len(f['texto'].split()):
-        continue
-    trecho = f'{OUT}/seg/leg_{f["id"]}.mp3'
-    run('-ss', f'{max(0, v["t"] - 0.1):.3f}', '-t', f'{v["dur"] + 0.2:.3f}', '-i', f'{OUT}/seg/legenda_voz.wav',
-        '-ac', '1', '-ar', '16000', '-b:a', '64k', trecho)
-    novas = [p for p in palavras_aai(trecho, max(0, v['t'] - 0.1)) if grupo_de(p['a']) == k]
-    if not novas:  # nem sozinho saiu (fala curta/arrastada): usa o texto do roteiro distribuído no tempo da fala
-        ws = f['texto'].split()
-        ini_f, fim_f = v['t'] + min(0.3, v['dur'] * 0.15), v['t'] + v['dur'] - min(0.35, v['dur'] * 0.15)
-        passo = (fim_f - ini_f) / len(ws)
-        novas = [{'w': w, 'a': round(ini_f + j * passo, 3), 'b': round(ini_f + (j + 0.9) * passo, 3)} for j, w in enumerate(ws)]
-    for p in novas:
-        p['grupo'] = k
-    palavras = sorted([p for p in palavras if p['grupo'] != k] + novas, key=lambda p: p['a'])
-    avisos.append(f'legenda: {f["id"]} transcrito à parte ({tem} → {len(novas)} palavras)')
-    print(avisos[-1], flush=True)
+# Legenda sincronizada (14/11/2026): cada item do roteiro é transcrito SOZINHO na AssemblyAI (a trilha inteira perdia
+# trechos e a legenda caía no tempo "distribuído", fora da voz). O TEXTO vem do roteiro, com a pontuação dele; da
+# AssemblyAI vem só o tempo de cada palavra (alinhamento por difflib; palavra sem par é interpolada entre as vizinhas).
+import difflib
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
+
+NUM = {'0': 'zero', '1': 'um', '2': 'dois', '3': 'tres', '4': 'quatro', '5': 'cinco', '6': 'seis', '7': 'sete',
+       '8': 'oito', '9': 'nove', '10': 'dez', '11': 'onze', '12': 'doze', '20': 'vinte', '30': 'trinta', '50': 'cinquenta',
+       '100': 'cem'}
+EQUIV = {'pra': 'para', 'pro': 'para o', 'ta': 'esta', 'tava': 'estava', 'to': 'estou', 'ce': 'voce', 'num': 'em um',
+         'numa': 'em uma'}
+
+
+def norm(w):
+    w = unicodedata.normalize('NFD', w.lower())
+    w = re.sub(r'[^a-z0-9]', '', ''.join(c for c in w if unicodedata.category(c) != 'Mn'))
+    return EQUIV.get(NUM.get(w, w), NUM.get(w, w)).split()[0] if w else ''
+
+
+def trecho_aai(k):
+    v = vozes[k]
+    ini = max(0, v['t'] - 0.15)
+    arq = f'{OUT}/seg/leg_{itens[k]["id"]}.mp3'
+    run('-ss', f'{ini:.3f}', '-t', f'{v["dur"] + 0.4:.3f}', '-i', f'{OUT}/seg/legenda_voz.wav',
+        '-ac', '1', '-ar', '16000', '-b:a', '64k', arq)
+    for tent in range(3):
+        try:
+            return [p for p in palavras_aai(arq, ini) if v['t'] - 0.2 <= p['a'] <= v['t'] + v['dur'] + 0.2]
+        except Exception as e:
+            print(f'aai {itens[k]["id"]} tentativa {tent + 1}: {e}', flush=True)
+            time.sleep(3)
+    return []
+
+
+def alinhar(k, ouvidas):
+    f, v = itens[k], vozes[k]
+    ws = f['texto'].split()
+    a_n, b_n = [norm(w) for w in ws], [norm(p['w']) for p in ouvidas]
+    tempos = [None] * len(ws)
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a_n, b_n, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            for d in range(i2 - i1):
+                tempos[i1 + d] = (ouvidas[j1 + d]['a'], ouvidas[j1 + d]['b'])
+        elif tag == 'replace':  # mesmas falas escritas diferente: reparte o tempo das ouvidas entre as do roteiro
+            a0, b0 = ouvidas[j1]['a'], ouvidas[j2 - 1]['b']
+            passo = (b0 - a0) / (i2 - i1)
+            for d in range(i2 - i1):
+                tempos[i1 + d] = (a0 + d * passo, a0 + (d + 0.92) * passo)
+    # sem par: interpola entre as vizinhas (ou nas bordas da fala)
+    ini_f, fim_f = v['t'] + 0.05, v['t'] + v['dur'] - 0.05
+    n = len(ws)
+    i = 0
+    while i < n:
+        if tempos[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < n and tempos[j] is None:
+            j += 1
+        a0 = tempos[i - 1][1] if i else ini_f
+        b0 = tempos[j][0] if j < n else fim_f
+        if b0 - a0 < 0.12 * (j - i):
+            b0 = a0 + 0.12 * (j - i)
+        passo = (b0 - a0) / (j - i)
+        for d in range(j - i):
+            tempos[i + d] = (a0 + d * passo, a0 + (d + 0.9) * passo)
+        i = j
+    out, ult = [], 0
+    for w, (a, b) in zip(ws, tempos):
+        a = max(a, ult)
+        b = max(b, a + 0.06)
+        out.append({'w': w, 'a': round(a, 3), 'b': round(b, 3), 'grupo': k})
+        ult = b
+    sem = sum(1 for x in a_n if x not in b_n)
+    return out, len(ouvidas), sem
+
+
+with ThreadPoolExecutor(8) as ex:
+    ouvidas_por_item = list(ex.map(trecho_aai, range(len(itens))))
+palavras = []
+for k in range(len(itens)):
+    pk, nouv, sem = alinhar(k, ouvidas_por_item[k])
+    palavras += pk
+    msg = f'legenda {itens[k]["id"]}: {len(pk)} palavras do roteiro, {nouv} ouvidas, {sem} sem par'
+    print(msg, flush=True)
+    if sem > max(1, len(pk) // 4):
+        avisos.append(msg)
+palavras.sort(key=lambda p: p['a'])
 json.dump(palavras, open(f'{OUT}/palavras.json', 'w', encoding='utf-8'), ensure_ascii=False)
 
 
