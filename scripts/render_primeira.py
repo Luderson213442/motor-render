@@ -232,7 +232,7 @@ def palavras_aai(arq, desloc=0.0):
     hd = {'authorization': key}
     url = requests.post(f'{AAI}/upload', headers=hd, data=open(arq, 'rb')).json()['upload_url']
     tid = requests.post(f'{AAI}/transcript', headers=hd, json={
-        'audio_url': url, 'language_code': 'pt', 'speech_models': ['universal-2']}).json()['id']
+        'audio_url': url, 'language_code': 'pt', 'speech_models': ['universal-3-5-pro', 'universal-2']}).json()['id']
     while True:
         r = requests.get(f'{AAI}/transcript/{tid}', headers=hd).json()
         if r['status'] == 'completed':
