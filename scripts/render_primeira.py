@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 W, H = 1080, 1920
 FAIXA_Y, FAIXA_H = 470, 990
 ROSA = (225, 48, 108)
+AMARELO = (255, 204, 0)
 ESCURO = (11, 11, 16)
 FONTE = 'fonts/Montserrat-ExtraBold.ttf'
 FONTE_B = 'fonts/Montserrat-Bold.ttf'
@@ -48,6 +49,10 @@ AAI = 'https://api.assemblyai.com/v2'
 os.makedirs(f'{OUT}/seg', exist_ok=True)
 BASE = sys.argv[1].rstrip('/')
 roteiro = json.load(open(f'{BASE}/roteiro.json', encoding='utf-8'))
+# "estilo": "velum" (19/11/2026): destaque amarelo no lugar do rosa, sem selo de parte e CTA do link da bio
+VELUM = roteiro.get('estilo') == 'velum'
+if VELUM:
+    ROSA = AMARELO
 t0 = time.time()
 avisos = []
 
@@ -364,7 +369,10 @@ open(f'{OUT}/legenda.ass', 'w', encoding='utf-8').write('\n'.join(ass) + '\n')
 ESTILO_LEG = roteiro.get('legenda_estilo', 'pagina')
 if ESTILO_LEG == 'pagina':
     LEG_Y, LEG_PAGS = legenda_pagina([dict(p) for p in palavras], f'{OUT}/legenda.mov', TOTAL, FPS,
-                                     {'fonte': FONTE, 'centro_y': FAIXA_Y + FAIXA_H - 140, **roteiro.get('legenda_cfg', {})})
+                                     {'fonte': FONTE, 'centro_y': FAIXA_Y + FAIXA_H - 140,
+                                      **({'pilula': AMARELO, 'atual_txt': (14, 14, 18)} if VELUM else {}),
+                                      **{k: tuple(v) if isinstance(v, list) else v
+                                         for k, v in roteiro.get('legenda_cfg', {}).items()}})
     print(f'legenda em {len(LEG_PAGS)} páginas', flush=True)
 
 # ---------------------------------------------------------------- moldura (título em cima, CTA embaixo, marca)
@@ -434,6 +442,18 @@ def cta_eu_quero(draw, cx, y):
     draw.text((x + wa, y + 56), b, font=f2, fill=ROSA)
 
 
+def cta_link_bio(draw, cx, y):
+    """Rodapé do Velum: QUER ASSISTIR O FILME COMPLETO? / Acesse o link da bio (amarelo)."""
+    draw.text((cx, y), roteiro.get('cta_linha1', 'QUER ASSISTIR O FILME COMPLETO?'), font=fonte(40, True),
+              fill=(235, 235, 240), anchor='mt')
+    f2 = fonte(50)
+    a, b = roteiro.get('cta_linha2') or ['Acesse o ', 'link da bio']
+    wa, wb = draw.textlength(a, font=f2), draw.textlength(b, font=f2)
+    x = cx - (wa + wb) / 2
+    draw.text((x, y + 56), a, font=f2, fill='white')
+    draw.text((x + wa, y + 56), b, font=f2, fill=AMARELO)
+
+
 def bloco_titulo(draw, cx, y_fim, parte=None):
     """Título (sempre em 3ª pessoa) terminando em y_fim, com o selo da parte em cima."""
     tam, linhas = quebrar_titulo(roteiro['topo'])
@@ -451,7 +471,7 @@ mold = Image.new('RGBA', (W, H), ESCURO + (255,))
 mold.paste((0, 0, 0, 0), (0, FAIXA_Y, W, FAIXA_Y + FAIXA_H))
 d = ImageDraw.Draw(mold)
 TAM_TIT, LINHAS_TIT = bloco_titulo(d, W / 2, FAIXA_Y - 46, roteiro.get('parte'))
-cta_eu_quero(d, W / 2, FAIXA_Y + FAIXA_H + 70)
+(cta_link_bio if VELUM else cta_eu_quero)(d, W / 2, FAIXA_Y + FAIXA_H + 70)
 marca(d, W / 2, H - 190, 46)
 mold.save(f'{OUT}/moldura.png')
 
