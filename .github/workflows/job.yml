@@ -24,15 +24,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Preparar
-        timeout-minutes: 8
         run: |
-          falta=""; for p in ffmpeg ffprobe aria2c jq; do command -v $p > /dev/null || falta="$falta $p"; done
-          falta=$(echo $falta | sed -e s/aria2c/aria2/ -e s/ffprobe/ffmpeg/)
-          if [ -n "$falta" ]; then
-            for t in 1 2 3; do sudo timeout 150 apt-get update -qq > /dev/null 2>&1; sudo timeout 150 apt-get install -y -qq $falta > /dev/null 2>&1 && break; done
-          fi
-          for t in 1 2 3; do timeout 150 pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1 && break; done
-          for p in ffmpeg ffprobe aria2c jq; do command -v $p > /dev/null || { echo "falta $p"; exit 1; }; done
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg aria2 jq > /dev/null 2>&1
+          pip install -q boto3 numpy requests pillow "scenedetect[opencv-headless]" > /dev/null 2>&1
           mkdir -p fonts
           for f in Montserrat-ExtraBold.ttf Montserrat-Bold.ttf; do
             curl -sfL "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/$f" -o fonts/$f
@@ -43,7 +37,8 @@ jobs:
           FONTE: ${{ secrets.FONTE }}
         run: |
           python motor/job.py baixar
-          aria2c -q -x 8 -s 8 -o ep.mp4 "$FONTE/$(cat arquivo.txt)" > /dev/null 2>&1
+          A=$(cat arquivo.txt); case "$A" in http*) U="$A";; *) U="$FONTE/$A";; esac
+          aria2c -q -x 16 -s 16 -o ep.mp4 "$U" > /dev/null 2>&1
           N=$(ffprobe -v error -select_streams a -show_entries stream_tags=language -of csv=p=0 ep.mp4 | grep -n -i -E '^(por|pt|pob|pt-br)' | head -1 | cut -d: -f1)
           ffmpeg -v error -y -i ep.mp4 -map 0:v:0 -map 0:a:$(( ${N:-1} - 1 )) -c copy ep-pt.mp4 && mv ep-pt.mp4 ep.mp4
           rm arquivo.txt; echo ok
